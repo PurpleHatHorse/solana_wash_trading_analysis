@@ -1,0 +1,357 @@
+"""
+Data Processing Module - UPDATED
+Converts raw JSON transfer data into structured CSV format with log index
+"""
+
+import pandas as pd
+import json
+import sys
+import os
+from datetime import datetime
+from typing import Dict, Optional
+
+
+class TransferDataProcessor:
+    """Process raw Arkham API transfer data"""
+    
+    def __init__(self, json_filename: str):
+        """
+        Initialize processor with raw JSON data
+        
+        Args:
+            json_filename: Name of JSON file in data/raw/
+        """
+        filepath = f"data/raw/{json_filename}"
+        
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"File not found: {filepath}")
+        
+        print(f"\nLoading data from: {filepath}")
+        
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+        
+        self.metadata = data.get('metadata', {})
+        self.raw_transfers = data.get('transfers', [])
+        self.df = None
+        
+        print(f"✓ Loaded {len(self.raw_transfers)} raw transfers")
+    
+    def process_all(self) -> pd.DataFrame:
+        """Main processing pipeline"""
+        
+        print("\n" + "="*70)
+        print("PROCESSING TRANSFER DATA")
+        print("="*70 + "\n")
+        
+        self.df = self._parse_transfers()
+        self._enrich_data()
+        self._validate_data()
+        
+        print("\n✓ Processing complete")
+        
+        return self.df
+    
+    def _parse_transfers(self) -> pd.DataFrame:
+        """Parse raw JSON transfers into DataFrame"""
+        
+        print("[1/3] Parsing transfer records...")
+        
+        records = []
+        
+        for idx, transfer in enumerate(self.raw_transfers):
+            try:
+                # Extract log index from transfer ID (format: txhash_logindex)
+                transfer_id = transfer.get('id', '')
+                log_index = None
+                if '_' in transfer_id:
+                    try:
+                        log_index = int(transfer_id.split('_')[-1])
+                    except:
+                        log_index = idx  # fallback to array index
+                else:
+                    log_index = idx
+                
+                record = {
+                    # Transfer identifiers
+                    'transfer_id': transfer.get('id'),
+                    'transaction_hash': transfer.get('transactionHash'),
+                    'log_index': log_index,
+                    'block_number': transfer.get('blockNumber'),
+                    'block_hash': transfer.get('blockHash'),
+                    'timestamp': transfer.get('blockTimestamp'),
+                    
+                    # From address details
+                    'from_address': self._extract_address(transfer, 'fromAddress'),
+                    'from_chain': self._extract_chain(transfer, 'fromAddress'),
+                    'from_entity_id': self._extract_entity_id(transfer, 'fromAddress'),
+                    'from_entity_name': self._extract_entity_name(transfer, 'fromAddress'),
+                    'from_entity_type': self._extract_entity_type(transfer, 'fromAddress'),
+                    'from_label': self._extract_label(transfer, 'fromAddress'),
+                    'from_is_contract': self._extract_contract_flag(transfer, 'fromAddress'),
+                    'from_deposit_service': self._extract_deposit_service(transfer, 'fromAddress'),
+                    
+                    # To address details
+                    'to_address': self._extract_address(transfer, 'toAddress'),
+                    'to_chain': self._extract_chain(transfer, 'toAddress'),
+                    'to_entity_id': self._extract_entity_id(transfer, 'toAddress'),
+                    'to_entity_name': self._extract_entity_name(transfer, 'toAddress'),
+                    'to_entity_type': self._extract_entity_type(transfer, 'toAddress'),
+                    'to_label': self._extract_label(transfer, 'toAddress'),
+                    'to_is_contract': self._extract_contract_flag(transfer, 'toAddress'),
+                    'to_deposit_service': self._extract_deposit_service(transfer, 'toAddress'),
+                    
+                    # Token details
+                    'token_address': transfer.get('tokenAddress'),
+                    'token_id': transfer.get('tokenId'),
+                    'token_name': transfer.get('tokenName'),
+                    'token_symbol': transfer.get('tokenSymbol'),
+                    'token_decimals': transfer.get('tokenDecimals'),
+                    
+                    # Transfer values
+                    'unit_value': transfer.get('unitValue'),
+                    'usd_value': transfer.get('historicalUSD'),
+                    
+                    # Transfer type
+                    'transfer_type': transfer.get('type'),
+                }
+                
+                records.append(record)
+                
+            except Exception as e:
+                print(f"  ⚠ Error processing transfer {idx}: {e}")
+                continue
+        
+        df = pd.DataFrame(records)
+        
+        print(f"  ✓ Parsed {len(df)} transfers successfully")
+        
+        return df
+    
+    def _extract_address(self, transfer: Dict, key: str) -> Optional[str]:
+        """Extract address from transfer object"""
+        addr_obj = transfer.get(key, {})
+        return addr_obj.get('address') if addr_obj else None
+    
+    def _extract_chain(self, transfer: Dict, key: str) -> Optional[str]:
+        """Extract chain from transfer object"""
+        addr_obj = transfer.get(key, {})
+        return addr_obj.get('chain') if addr_obj else None
+    
+    def _extract_entity_id(self, transfer: Dict, key: str) -> Optional[str]:
+        """Extract Arkham entity ID"""
+        addr_obj = transfer.get(key, {})
+        if not addr_obj:
+            return None
+        entity = addr_obj.get('arkhamEntity', {})
+        return entity.get('id') if entity else None
+    
+    def _extract_entity_name(self, transfer: Dict, key: str) -> Optional[str]:
+        """Extract Arkham entity name"""
+        addr_obj = transfer.get(key, {})
+        if not addr_obj:
+            return None
+        entity = addr_obj.get('arkhamEntity', {})
+        return entity.get('name') if entity else None
+    
+    def _extract_entity_type(self, transfer: Dict, key: str) -> Optional[str]:
+        """Extract Arkham entity type"""
+        addr_obj = transfer.get(key, {})
+        if not addr_obj:
+            return None
+        entity = addr_obj.get('arkhamEntity', {})
+        return entity.get('type') if entity else None
+    
+    def _extract_label(self, transfer: Dict, key: str) -> Optional[str]:
+        """Extract Arkham label name"""
+        addr_obj = transfer.get(key, {})
+        if not addr_obj:
+            return None
+        label = addr_obj.get('arkhamLabel', {})
+        return label.get('name') if label else None
+    
+    def _extract_contract_flag(self, transfer: Dict, key: str) -> Optional[bool]:
+        """Extract contract boolean flag"""
+        addr_obj = transfer.get(key, {})
+        return addr_obj.get('contract') if addr_obj else None
+    
+    def _extract_deposit_service(self, transfer: Dict, key: str) -> Optional[str]:
+        """Extract deposit service ID"""
+        addr_obj = transfer.get(key, {})
+        return addr_obj.get('depositServiceID') if addr_obj else None
+    
+    def _enrich_data(self):
+        """Add computed columns"""
+        
+        print("[2/3] Enriching data with computed fields...")
+        
+        # Convert timestamp to datetime
+        self.df['timestamp'] = pd.to_datetime(self.df['timestamp'], errors='coerce')
+        
+        # Sort by transaction hash and log index
+        self.df = self.df.sort_values(['transaction_hash', 'log_index']).reset_index(drop=True)
+        
+        # Add date column
+        self.df['date'] = self.df['timestamp'].dt.date
+        
+        # Add hour column
+        self.df['hour'] = self.df['timestamp'].dt.hour
+        
+        # Add day of week
+        self.df['day_of_week'] = self.df['timestamp'].dt.day_name()
+        
+        # Flag intermediary entities
+        INTERMEDIARIES = ['dex', 'cex', 'dex_aggregator', 'bridge', 'mixer']
+        self.df['from_is_intermediary'] = self.df['from_entity_type'].isin(INTERMEDIARIES)
+        self.df['to_is_intermediary'] = self.df['to_entity_type'].isin(INTERMEDIARIES)
+        
+        # Flag if both sides are users (non-intermediaries)
+        self.df['is_user_to_user'] = (
+            (~self.df['from_is_intermediary']) & 
+            (~self.df['to_is_intermediary'])
+        )
+        
+        print(f"  ✓ Added computed columns")
+    
+    def _validate_data(self):
+        """Validate processed data"""
+        
+        print("[3/3] Validating data quality...")
+        
+        issues = []
+        
+        # Check for null addresses
+        null_from = self.df['from_address'].isna().sum()
+        null_to = self.df['to_address'].isna().sum()
+        
+        if null_from > 0:
+            issues.append(f"{null_from} transfers with null from_address")
+        if null_to > 0:
+            issues.append(f"{null_to} transfers with null to_address")
+        
+        # Check for null timestamps
+        null_timestamps = self.df['timestamp'].isna().sum()
+        if null_timestamps > 0:
+            issues.append(f"{null_timestamps} transfers with null timestamp")
+        
+        if issues:
+            print(f"  ⚠ Data quality issues found:")
+            for issue in issues:
+                print(f"    - {issue}")
+        else:
+            print(f"  ✓ Data validation passed")
+    
+    def get_summary(self) -> Dict:
+        """Generate summary statistics"""
+        
+        summary = {
+            'total_transfers': len(self.df),
+            'unique_transactions': self.df['transaction_hash'].nunique(),
+            'unique_senders': self.df['from_address'].nunique(),
+            'unique_receivers': self.df['to_address'].nunique(),
+            'date_range': {
+                'start': self.df['timestamp'].min(),
+                'end': self.df['timestamp'].max(),
+                'days': (self.df['timestamp'].max() - self.df['timestamp'].min()).days
+            },
+            'volume': {
+                'total_usd': self.df['usd_value'].sum(),
+                'mean_usd': self.df['usd_value'].mean(),
+                'median_usd': self.df['usd_value'].median(),
+            },
+            'intermediaries': {
+                'from_intermediary_count': self.df['from_is_intermediary'].sum(),
+                'to_intermediary_count': self.df['to_is_intermediary'].sum(),
+                'user_to_user_count': self.df['is_user_to_user'].sum(),
+            }
+        }
+        
+        return summary
+    
+    def print_summary(self):
+        """Print formatted summary"""
+        
+        summary = self.get_summary()
+        
+        print("\n" + "="*70)
+        print("DATA SUMMARY")
+        print("="*70)
+        
+        print(f"\n📊 Transfer Statistics:")
+        print(f"   Total Transfers: {summary['total_transfers']:,}")
+        print(f"   Unique Transactions: {summary['unique_transactions']:,}")
+        print(f"   Unique Senders: {summary['unique_senders']:,}")
+        print(f"   Unique Receivers: {summary['unique_receivers']:,}")
+        
+        print(f"\n📅 Time Range:")
+        print(f"   Start: {summary['date_range']['start']}")
+        print(f"   End: {summary['date_range']['end']}")
+        print(f"   Duration: {summary['date_range']['days']} days")
+        
+        print(f"\n💰 Volume Statistics:")
+        print(f"   Total USD Volume: ${summary['volume']['total_usd']:,.2f}")
+        print(f"   Average Transfer: ${summary['volume']['mean_usd']:,.2f}")
+        print(f"   Median Transfer: ${summary['volume']['median_usd']:,.2f}")
+        
+        print(f"\n🏦 Intermediary Analysis:")
+        print(f"   Transfers FROM intermediary: {summary['intermediaries']['from_intermediary_count']:,}")
+        print(f"   Transfers TO intermediary: {summary['intermediaries']['to_intermediary_count']:,}")
+        print(f"   Direct user-to-user: {summary['intermediaries']['user_to_user_count']:,}")
+        
+        print("\n" + "="*70 + "\n")
+    
+    def save_to_csv(self, filename: str):
+        """Save processed data to CSV"""
+        
+        os.makedirs('data/processed', exist_ok=True)
+        filepath = f"data/processed/{filename}"
+        
+        self.df.to_csv(filepath, index=False)
+        
+        file_size = os.path.getsize(filepath) / 1024
+        print(f"✓ Processed data saved: {filepath}")
+        print(f"  Rows: {len(self.df):,}")
+        print(f"  Columns: {len(self.df.columns)}")
+        print(f"  File size: {file_size:.2f} KB")
+
+
+def main():
+    """Main execution"""
+    
+    if len(sys.argv) < 2:
+        print("Usage: python process_data.py <json_filename>")
+        print("Example: python process_data.py WIF_solana_30d_20240101_120000.json")
+        sys.exit(1)
+    
+    json_filename = sys.argv[1]
+    
+    try:
+        # Initialize processor
+        processor = TransferDataProcessor(json_filename)
+        
+        # Process data
+        df = processor.process_all()
+        
+        # Print summary
+        processor.print_summary()
+        
+        # Save to CSV
+        csv_filename = json_filename.replace('.json', '_processed.csv')
+        processor.save_to_csv(csv_filename)
+        
+        print("\n✓ Processing complete!")
+        print(f"\nNext step:")
+        print(f"  python analysis/detect_wash_trading.py {csv_filename}")
+        
+    except FileNotFoundError as e:
+        print(f"\n✗ Error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n✗ Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

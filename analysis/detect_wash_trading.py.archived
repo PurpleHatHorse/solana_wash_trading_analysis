@@ -1,0 +1,583 @@
+"""
+Wash Trading Detection Module
+Implements multiple algorithms to detect wash trading patterns
+"""
+
+import pandas as pd
+import numpy as np
+import sys
+import os
+from datetime import timedelta
+from collections import defaultdict, Counter
+import networkx as nx
+from typing import Dict, List, Tuple, Set
+
+
+class WashTradingDetector:
+    """Comprehensive wash trading detection system"""
+    
+    def __init__(self, csv_filename: str):
+        """
+        Initialize detector with processed transfer data
+        
+        Args:
+            csv_filename: Name of processed CSV file
+        """
+        filepath = f"data/processed/{csv_filename}"
+        
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"File not found: {filepath}")
+        
+        print(f"\nLoading processed data: {filepath}")
+        self.df = pd.read_csv(filepath)
+        self.df['timestamp'] = pd.to_datetime(self.df['timestamp'])
+        
+        print(f"✓ Loaded {len(self.df):,} transfers")
+        
+        self.results = {}
+        self.suspicious_addresses = set()
+    
+    def run_all_analyses(self) -> Dict:
+        """Execute all wash trading detection algorithms"""
+        
+        print("\n" + "="*70)
+        print("WASH TRADING DETECTION ANALYSIS")
+        print("="*70 + "\n")
+        
+        # Run all detection methods
+        self.results['circular_trades'] = self.detect_circular_trades()
+        self.results['rapid_roundtrips'] = self.detect_rapid_roundtrips()
+        self.results['self_transfers'] = self.analyze_self_transfers()
+        self.results['wallet_clusters'] = self.detect_wallet_clusters()
+        self.results['volume_concentration'] = self.analyze_volume_concentration()
+        self.results['timing_patterns'] = self.analyze_timing_patterns()
+        self.results['address_pairs'] = self.analyze_address_pairs()
+        
+        # Compile suspicious addresses
+        self._compile_suspicious_addresses()
+        
+        return self.results
+    
+    def detect_circular_trades(self, max_cycle_length: int = 4) -> pd.DataFrame:
+        """
+        Detect circular trading patterns (A→B→C→A)
+        
+        Args:
+            max_cycle_length: Maximum cycle length to detect
+            
+        Returns:
+            DataFrame of circular trading patterns
+        """
+        
+        print("[1/7] Detecting Circular Trading Patterns...")
+        
+        # Build directed graph of transfers
+        G = nx.DiGraph()
+        
+        for _, row in self.df.iterrows():
+            from_addr = row['from_address']
+            to_addr = row['to_address']
+            
+            if pd.isna(from_addr) or pd.isna(to_addr):
+                continue
+            
+            # Add edge with transfer data
+            if G.has_edge(from_addr, to_addr):
+                G[from_addr][to_addr]['weight'] += row['usd_value'] or 0
+                G[from_addr][to_addr]['count'] += 1
+            else:
+                G.add_edge(from_addr, to_addr, 
+                          weight=row['usd_value'] or 0,
+                          count=1)
+        
+        print(f"   Graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+        
+        # Find cycles
+        cycles_found = []
+        
+        try:
+            for cycle in nx.simple_cycles(G):
+                if 2 <= len(cycle) <= max_cycle_length:
+                    # Calculate cycle metrics
+                    total_volume = 0
+                    total_transfers = 0
+                    
+                    for i in range(len(cycle)):
+                        from_addr = cycle[i]
+                        to_addr = cycle[(i + 1) % len(cycle)]
+                        
+                        if G.has_edge(from_addr, to_addr):
+                            total_volume += G[from_addr][to_addr]['weight']
+                            total_transfers += G[from_addr][to_addr]['count']
+                    
+                    cycles_found.append({
+                        'cycle_length': len(cycle),
+                        'addresses': cycle,
+                        'cycle_path': ' → '.join([addr[:8] + '...' for addr in cycle] + [cycle[0][:8] + '...']),
+                        'total_volume_usd': total_volume,
+                        'total_transfers': total_transfers,
+                        'avg_transfer_size': total_volume / total_transfers if total_transfers > 0 else 0
+                    })
+        except Exception as e:
+            print(f"   ⚠ Error detecting cycles: {e}")
+        
+        result_df = pd.DataFrame(cycles_found)
+        
+        if not result_df.empty:
+            result_df = result_df.sort_values('total_volume_usd', ascending=False)
+            print(f"   ✓ Found {len(result_df)} circular patterns")
+            print(f"   ✓ Total volume in cycles: ${result_df['total_volume_usd'].sum():,.2f}")
+        else:
+            print(f"   ✓ No circular patterns detected")
+        
+        return result_df
+    
+    def detect_rapid_roundtrips(self, 
+                                time_threshold_hours: int = 24,
+                                min_roundtrips: int = 3) -> pd.DataFrame:
+        """
+        Detect rapid buy-sell round trips between address pairs
+        
+        Args:
+            time_threshold_hours: Max time between opposite transfers
+            min_roundtrips: Minimum roundtrips to flag as suspicious
+            
+        Returns:
+            DataFrame of suspicious round-trip patterns
+        """
+        
+        print(f"[2/7] Detecting Rapid Round-Trip Trades (<{time_threshold_hours}h)...")
+        
+        roundtrips = []
+        
+        # Group by address pairs
+        for pair, group in self.df.groupby('address_pair'):
+            if len(group) < 2:
+                continue
+            
+            addr1, addr2 = pair
+            
+            # Get transfers in both directions
+            a_to_b = group[group['from_address'] == addr1].sort_values('timestamp')
+            b_to_a = group[group['from_address'] == addr2].sort_values('timestamp')
+            
+            if len(a_to_b) == 0 or len(b_to_a) == 0:
+                continue
+            
+            # Find round-trips
+            roundtrip_count = 0
+            total_volume = 0
+            min_time_diff = timedelta(days=999)
+            
+            for _, transfer_out in a_to_b.iterrows():
+                # Find corresponding return transfers within time window
+                time_window = transfer_out['timestamp'] + timedelta(hours=time_threshold_hours)
+                
+                matching_returns = b_to_a[
+                    (b_to_a['timestamp'] > transfer_out['timestamp']) &
+                    (b_to_a['timestamp'] <= time_window)
+                ]
+                
+                for _, return_transfer in matching_returns.iterrows():
+                    roundtrip_count += 1
+                    total_volume += (transfer_out['usd_value'] or 0) + (return_transfer['usd_value'] or 0)
+                    
+                    time_diff = return_transfer['timestamp'] - transfer_out['timestamp']
+                    if time_diff < min_time_diff:
+                        min_time_diff = time_diff
+            
+            if roundtrip_count >= min_roundtrips:
+                roundtrips.append({
+                    'address_1': addr1,
+                    'address_2': addr2,
+                    'roundtrip_count': roundtrip_count,
+                    'total_transfers': len(group),
+                    'roundtrip_ratio': roundtrip_count / len(group),
+                    'total_volume_usd': total_volume,
+                    'avg_roundtrip_volume': total_volume / roundtrip_count if roundtrip_count > 0 else 0,
+                    'fastest_roundtrip_hours': min_time_diff.total_seconds() / 3600
+                })
+        
+        result_df = pd.DataFrame(roundtrips)
+        
+        if not result_df.empty:
+            result_df = result_df.sort_values('roundtrip_count', ascending=False)
+            print(f"   ✓ Found {len(result_df)} suspicious round-trip patterns")
+            print(f"   ✓ Total roundtrips: {result_df['roundtrip_count'].sum()}")
+        else:
+            print(f"   ✓ No rapid round-trips detected")
+        
+        return result_df
+    
+    def analyze_self_transfers(self) -> pd.DataFrame:
+        """Analyze self-transfers (same address sending to itself)"""
+        
+        print("[3/7] Analyzing Self-Transfers...")
+        
+        self_transfers = self.df[self.df['is_self_transfer'] == True].copy()
+        
+        if len(self_transfers) == 0:
+            print(f"   ✓ No self-transfers found")
+            return pd.DataFrame()
+        
+        # Group by address
+        summary = self_transfers.groupby('from_address').agg({
+            'transfer_id': 'count',
+            'usd_value': ['sum', 'mean', 'count']
+        }).reset_index()
+        
+        summary.columns = ['address', 'transfer_count', 'total_volume_usd', 
+                          'avg_transfer_usd', 'count_check']
+        summary = summary.drop('count_check', axis=1)
+        summary = summary.sort_values('transfer_count', ascending=False)
+        
+        print(f"   ✓ Found {len(self_transfers)} self-transfers")
+        print(f"   ✓ Involving {len(summary)} unique addresses")
+        print(f"   ✓ Total volume: ${summary['total_volume_usd'].sum():,.2f}")
+        
+        return summary
+    
+    def detect_wallet_clusters(self, 
+                               same_time_window_seconds: int = 60,
+                               min_cluster_size: int = 3) -> pd.DataFrame:
+        """
+        Detect clusters of wallets with coordinated behavior
+        
+        Args:
+            same_time_window_seconds: Time window for coordinated activity
+            min_cluster_size: Minimum wallets in cluster
+            
+        Returns:
+            DataFrame of suspicious wallet clusters
+        """
+        
+        print(f"[4/7] Detecting Coordinated Wallet Clusters...")
+        
+        # Group transfers by time windows
+        self.df['time_window'] = self.df['timestamp'].dt.floor(f'{same_time_window_seconds}S')
+        
+        clusters = []
+        
+        for time_window, group in self.df.groupby('time_window'):
+            # Get unique addresses in this time window
+            addresses = set(group['from_address'].dropna()) | set(group['to_address'].dropna())
+            
+            if len(addresses) >= min_cluster_size:
+                clusters.append({
+                    'timestamp': time_window,
+                    'cluster_size': len(addresses),
+                    'transfer_count': len(group),
+                    'total_volume_usd': group['usd_value'].sum(),
+                    'addresses': list(addresses)[:10]  # Store first 10 addresses
+                })
+        
+        result_df = pd.DataFrame(clusters)
+        
+        if not result_df.empty:
+            result_df = result_df.sort_values('cluster_size', ascending=False)
+            print(f"   ✓ Found {len(result_df)} coordinated time windows")
+            print(f"   ✓ Largest cluster: {result_df['cluster_size'].max()} addresses")
+        else:
+            print(f"   ✓ No coordinated clusters detected")
+        
+        return result_df
+    
+    def analyze_volume_concentration(self, top_n: int = 20) -> pd.DataFrame:
+        """
+        Analyze volume concentration among top addresses
+        
+        Args:
+            top_n: Number of top addresses to analyze
+            
+        Returns:
+            DataFrame of volume concentration metrics
+        """
+        
+        print(f"[5/7] Analyzing Volume Concentration (Top {top_n})...")
+        
+        # Combine from and to addresses
+        from_volume = self.df.groupby('from_address')['usd_value'].sum()
+        to_volume = self.df.groupby('to_address')['usd_value'].sum()
+        
+        total_volume_by_address = from_volume.add(to_volume, fill_value=0)
+        total_volume_by_address = total_volume_by_address.sort_values(ascending=False)
+        
+        # Calculate concentration metrics
+        total_volume = total_volume_by_address.sum()
+        top_addresses = total_volume_by_address.head(top_n)
+        
+        concentration_data = []
+        
+        for rank, (address, volume) in enumerate(top_addresses.items(), 1):
+            # Get transfer counts
+            from_count = len(self.df[self.df['from_address'] == address])
+            to_count = len(self.df[self.df['to_address'] == address])
+            
+            concentration_data.append({
+                'rank': rank,
+                'address': address,
+                'total_volume_usd': volume,
+                'volume_percentage': (volume / total_volume) * 100,
+                'from_transfer_count': from_count,
+                'to_transfer_count': to_count,
+                'total_transfer_count': from_count + to_count
+            })
+        
+        result_df = pd.DataFrame(concentration_data)
+        
+        # Calculate cumulative concentration
+        result_df['cumulative_percentage'] = result_df['volume_percentage'].cumsum()
+        
+        print(f"   ✓ Top 10 addresses control {result_df.head(10)['volume_percentage'].sum():.2f}% of volume")
+        print(f"   ✓ Top 20 addresses control {result_df['volume_percentage'].sum():.2f}% of volume")
+        
+        return result_df
+    
+    def analyze_timing_patterns(self) -> Dict:
+        """Analyze temporal patterns in transfers"""
+        
+        print("[6/7] Analyzing Timing Patterns...")
+        
+        # Hour of day distribution
+        hour_dist = self.df['hour'].value_counts().sort_index()
+        
+        # Day of week distribution
+        day_dist = self.df['day_of_week'].value_counts()
+        
+        # Inter-transfer time analysis
+        self.df_sorted = self.df.sort_values('timestamp')
+        time_diffs = self.df_sorted['timestamp'].diff()
+        
+        patterns = {
+            'hourly_distribution': hour_dist.to_dict(),
+            'daily_distribution': day_dist.to_dict(),
+            'median_time_between_transfers_seconds': time_diffs.median().total_seconds(),
+            'mean_time_between_transfers_seconds': time_diffs.mean().total_seconds(),
+            'transfers_per_hour': len(self.df) / ((self.df['timestamp'].max() - self.df['timestamp'].min()).total_seconds() / 3600),
+            'most_active_hour': hour_dist.idxmax(),
+            'most_active_day': day_dist.idxmax()
+        }
+        
+        print(f"   ✓ Most active hour: {patterns['most_active_hour']}:00")
+        print(f"   ✓ Most active day: {patterns['most_active_day']}")
+        print(f"   ✓ Avg time between transfers: {patterns['mean_time_between_transfers_seconds']:.1f}s")
+        
+        return patterns
+    
+    def analyze_address_pairs(self, min_transfers: int = 5) -> pd.DataFrame:
+        """
+        Analyze address pairs with high transfer frequency
+        
+        Args:
+            min_transfers: Minimum transfers between pair to include
+            
+        Returns:
+            DataFrame of suspicious address pairs
+        """
+        
+        print(f"[7/7] Analyzing High-Frequency Address Pairs...")
+        
+        pair_analysis = []
+        
+        for pair, group in self.df.groupby('address_pair'):
+            if len(group) < min_transfers:
+                continue
+            
+            addr1, addr2 = pair
+            
+            # Calculate metrics
+            total_transfers = len(group)
+            total_volume = group['usd_value'].sum()
+            avg_volume = group['usd_value'].mean()
+            
+            # Calculate bidirectionality
+            a_to_b = len(group[group['from_address'] == addr1])
+            b_to_a = len(group[group['from_address'] == addr2])
+            
+            bidirectional_ratio = min(a_to_b, b_to_a) / max(a_to_b, b_to_a) if max(a_to_b, b_to_a) > 0 else 0
+            
+            # Time span
+            time_span = (group['timestamp'].max() - group['timestamp'].min()).total_seconds() / 3600
+            
+            pair_analysis.append({
+                'address_1': addr1,
+                'address_2': addr2,
+                'total_transfers': total_transfers,
+                'a_to_b': a_to_b,
+                'b_to_a': b_to_a,
+                'bidirectional_ratio': bidirectional_ratio,
+                'total_volume_usd': total_volume,
+                'avg_transfer_usd': avg_volume,
+                'time_span_hours': time_span,
+                'transfers_per_hour': total_transfers / time_span if time_span > 0 else 0
+            })
+        
+        result_df = pd.DataFrame(pair_analysis)
+        
+        if not result_df.empty:
+            result_df = result_df.sort_values('total_transfers', ascending=False)
+            print(f"   ✓ Found {len(result_df)} high-frequency pairs")
+            print(f"   ✓ Highest frequency: {result_df['total_transfers'].max()} transfers")
+        else:
+            print(f"   ✓ No high-frequency pairs detected")
+        
+        return result_df
+    
+    def _compile_suspicious_addresses(self):
+        """Compile set of all suspicious addresses from all analyses"""
+        
+        # From circular trades
+        if not self.results['circular_trades'].empty:
+            for addresses_list in self.results['circular_trades']['addresses']:
+                self.suspicious_addresses.update(addresses_list)
+        
+        # From round trips
+        if not self.results['rapid_roundtrips'].empty:
+            self.suspicious_addresses.update(self.results['rapid_roundtrips']['address_1'])
+            self.suspicious_addresses.update(self.results['rapid_roundtrips']['address_2'])
+        
+        # From self transfers
+        if not self.results['self_transfers'].empty:
+            self.suspicious_addresses.update(self.results['self_transfers']['address'])
+        
+        print(f"\n✓ Identified {len(self.suspicious_addresses)} suspicious addresses")
+    
+    def generate_report(self) -> str:
+        """Generate comprehensive analysis report"""
+        
+        report = []
+        report.append("="*70)
+        report.append("WASH TRADING ANALYSIS REPORT")
+        report.append("="*70)
+        report.append(f"\nGenerated: {pd.Timestamp.now()}")
+        report.append(f"Dataset: {len(self.df):,} transfers")
+        report.append(f"Date Range: {self.df['timestamp'].min()} to {self.df['timestamp'].max()}")
+        report.append("\n" + "="*70)
+        
+        # Summary of findings
+        report.append("\n📊 FINDINGS SUMMARY:\n")
+        
+        findings_count = 0
+        
+        if not self.results['circular_trades'].empty:
+            count = len(self.results['circular_trades'])
+            report.append(f"   ✗ {count} circular trading patterns detected")
+            findings_count += count
+        
+        if not self.results['rapid_roundtrips'].empty:
+            count = len(self.results['rapid_roundtrips'])
+            report.append(f"   ✗ {count} rapid round-trip patterns detected")
+            findings_count += count
+        
+        if not self.results['self_transfers'].empty:
+            count = len(self.results['self_transfers'])
+            report.append(f"   ✗ {count} addresses with self-transfers")
+            findings_count += count
+        
+        if findings_count == 0:
+            report.append("   ✓ No obvious wash trading patterns detected")
+        else:
+            report.append(f"\n   TOTAL: {findings_count} suspicious patterns found")
+        
+        report.append(f"\n   🚨 {len(self.suspicious_addresses)} unique suspicious addresses")
+        
+        # Volume concentration
+        report.append("\n" + "="*70)
+        report.append("\n💰 VOLUME CONCENTRATION:\n")
+        
+        if not self.results['volume_concentration'].empty:
+            top_10_pct = self.results['volume_concentration'].head(10)['volume_percentage'].sum()
+            report.append(f"   Top 10 addresses: {top_10_pct:.2f}% of total volume")
+            
+            if top_10_pct > 50:
+                report.append(f"   ⚠ HIGH CONCENTRATION - Potential wash trading indicator")
+        
+        # Timing patterns
+        report.append("\n" + "="*70)
+        report.append("\n⏰ TIMING ANALYSIS:\n")
+        
+        timing = self.results['timing_patterns']
+        report.append(f"   Most active hour: {timing['most_active_hour']}:00")
+        report.append(f"   Most active day: {timing['most_active_day']}")
+        report.append(f"   Transfers per hour: {timing['transfers_per_hour']:.2f}")
+        
+        report.append("\n" + "="*70 + "\n")
+        
+        return "\n".join(report)
+    
+    def save_results(self, output_dir: str = "outputs/reports"):
+        """Save all analysis results"""
+        
+        os.makedirs(output_dir, exist_ok=True)
+        timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Save each result to CSV
+        for name, df in self.results.items():
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                filename = f"{output_dir}/{name}_{timestamp}.csv"
+                df.to_csv(filename, index=False)
+                print(f"✓ Saved: {filename}")
+            elif isinstance(df, dict):
+                filename = f"{output_dir}/{name}_{timestamp}.json"
+                import json
+                with open(filename, 'w') as f:
+                    json.dump(df, f, indent=2, default=str)
+                print(f"✓ Saved: {filename}")
+        
+        # Save text report
+        report_text = self.generate_report()
+        report_file = f"{output_dir}/analysis_report_{timestamp}.txt"
+        with open(report_file, 'w') as f:
+            f.write(report_text)
+        print(f"✓ Saved: {report_file}")
+        
+        # Save suspicious addresses
+        if self.suspicious_addresses:
+            suspicious_file = f"{output_dir}/suspicious_addresses_{timestamp}.txt"
+            with open(suspicious_file, 'w') as f:
+                for addr in sorted(self.suspicious_addresses):
+                    f.write(f"{addr}\n")
+            print(f"✓ Saved: {suspicious_file}")
+
+
+def main():
+    """Main execution"""
+    
+    if len(sys.argv) < 2:
+        print("Usage: python detect_wash_trading.py <processed_csv_filename>")
+        print("Example: python detect_wash_trading.py WIF_solana_30d_20240101_120000_processed.csv")
+        sys.exit(1)
+    
+    csv_filename = sys.argv[1]
+    
+    try:
+        # Initialize detector
+        detector = WashTradingDetector(csv_filename)
+        
+        # Run all analyses
+        results = detector.run_all_analyses()
+        
+        # Print report
+        print("\n" + detector.generate_report())
+        
+        # Save results
+        detector.save_results()
+        
+        print("\n✓ Analysis complete!")
+        print(f"\nNext steps:")
+        print(f"  1. Review reports in outputs/reports/")
+        print(f"  2. Generate visualizations:")
+        print(f"     python analysis/visualize_results.py {csv_filename}")
+        
+    except FileNotFoundError as e:
+        print(f"\n✗ Error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n✗ Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

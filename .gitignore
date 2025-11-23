@@ -1,0 +1,17 @@
+# OS
+.DS_Store
+.localized
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.env
+
+# Data
+*.csv
+*.json
+data/
+
+# Nested (if re-added)
+ArkhamTHT/.git

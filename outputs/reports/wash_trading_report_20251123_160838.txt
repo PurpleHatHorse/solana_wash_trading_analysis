@@ -1,0 +1,29 @@
+======================================================================
+WASH TRADING ANALYSIS REPORT
+Transaction-Hash Based Detection
+======================================================================
+
+Generated: 2025-11-23 16:08:38.472022
+Original transfers: 5,000
+User-to-user flows extracted: 1,848
+Date range: 2025-11-22 12:18:57+00:00 to 2025-11-22 17:02:09+00:00
+
+======================================================================
+
+🔍 DETECTION SUMMARY:
+
+   🚨 266 wallets with self-transfers
+   🚨 125 wallet pairs with rapid round-trips
+   🚨 37 high-frequency trading pairs
+   🚨 10 circular trading patterns
+
+   TOTAL SUSPICIOUS WALLETS: 271
+
+======================================================================
+
+💰 VOLUME CONCENTRATION:
+
+   Top 10 wallets control: 63.17% of volume
+   ⚠️ HIGH CONCENTRATION - Strong wash trading indicator
+
+======================================================================
