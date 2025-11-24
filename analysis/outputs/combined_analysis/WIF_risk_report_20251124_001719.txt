@@ -1,0 +1,92 @@
+======================================================================
+COMBINED ANALYSIS REPORT: WIF
+======================================================================
+
+Generated: 2025-11-24 00:17:19.787413
+Token: WIF
+Total Wallets Analyzed: 378
+
+----------------------------------------------------------------------
+RISK DISTRIBUTION
+----------------------------------------------------------------------
+
+CRITICAL  :    0 wallets (  0.0%)
+HIGH      :   75 wallets ( 19.8%)
+MEDIUM    :  131 wallets ( 34.7%)
+LOW       :  172 wallets ( 45.5%)
+
+----------------------------------------------------------------------
+TOP 10 HIGHEST RISK WALLETS
+----------------------------------------------------------------------
+
+Wallet: FJh2SEzFwz3EUq9161GYFD5C79qnpCobyKz4wVQBkQAE
+  Risk: HIGH (Score: 63.5/100)
+  Bot: HUMAN (Score: 0.270)
+  Wash Trading: YES
+  Wash Flags: self_transfers,rapid_roundtrips,high_frequency_pairs,volume_concentration
+
+Wallet: EZwPn7Ku9ARNwiF8tnjDfwdCPLuHMYwYTn7Q5iK3MUaV
+  Risk: HIGH (Score: 63.5/100)
+  Bot: HUMAN (Score: 0.370)
+  Wash Trading: YES
+  Wash Flags: self_transfers,rapid_roundtrips,high_frequency_pairs
+
+Wallet: 8QwcX2sa3oEdV9xVjDjQ3N5JpZNSzYtJuu77fKhGTaU4
+  Risk: HIGH (Score: 63.5/100)
+  Bot: HUMAN (Score: 0.370)
+  Wash Trading: YES
+  Wash Flags: self_transfers,rapid_roundtrips,high_frequency_pairs
+
+Wallet: C2L6DdAtVQNcDw3KKGoyWTV3AfuYdUfPKZn21EEhKMkm
+  Risk: HIGH (Score: 63.5/100)
+  Bot: HUMAN (Score: 0.270)
+  Wash Trading: YES
+  Wash Flags: self_transfers,rapid_roundtrips,high_frequency_pairs,volume_concentration
+
+Wallet: Bpn9UfdFsME4bBnfUFRqriT6ALwoy487Ac4VQ8L1CPP6
+  Risk: HIGH (Score: 63.5/100)
+  Bot: HUMAN (Score: 0.270)
+  Wash Trading: YES
+  Wash Flags: self_transfers,rapid_roundtrips,high_frequency_pairs,volume_concentration
+
+Wallet: 2VoBhsq5v5xQFyYgZ922n8ihhX2tJhcmTUCW22qA2KBc
+  Risk: HIGH (Score: 63.5/100)
+  Bot: HUMAN (Score: 0.370)
+  Wash Trading: YES
+  Wash Flags: self_transfers,rapid_roundtrips,high_frequency_pairs
+
+Wallet: tp7ZRGGBBK6uREbPqQTEqUi3qMqddcZGgb7B9eaRaDv
+  Risk: HIGH (Score: 63.5/100)
+  Bot: HUMAN (Score: 0.270)
+  Wash Trading: YES
+  Wash Flags: self_transfers,rapid_roundtrips,high_frequency_pairs,circular_patterns
+
+Wallet: mLFRTAhmNPj79GGMT4vr21sMKLa2MA3bnwaxzmFMUrH
+  Risk: HIGH (Score: 63.5/100)
+  Bot: HUMAN (Score: 0.270)
+  Wash Trading: YES
+  Wash Flags: self_transfers,rapid_roundtrips,high_frequency_pairs,volume_concentration
+
+Wallet: 5NpnbQ3cRVgfGZqWX2j5hi9LphRn5gPN8b7kQEkgJHh4
+  Risk: HIGH (Score: 63.5/100)
+  Bot: HUMAN (Score: 0.270)
+  Wash Trading: YES
+  Wash Flags: self_transfers,rapid_roundtrips,high_frequency_pairs,volume_concentration
+
+Wallet: CqQMFUCEMbK9Cp9yMonmthKqzc59Ta48JpZMZsh1bDqf
+  Risk: HIGH (Score: 60.5/100)
+  Bot: HUMAN (Score: 0.210)
+  Wash Trading: YES
+  Wash Flags: self_transfers,rapid_roundtrips,high_frequency_pairs,circular_patterns
+
+
+----------------------------------------------------------------------
+KEY FINDINGS
+----------------------------------------------------------------------
+
+• Critical Risk Wallets: 0
+• Confirmed Bots: 0
+• Wash Traders: 370
+• Bots + Wash Trading: 0 (HIGHEST CONCERN)
+
+======================================================================
