@@ -34,10 +34,11 @@ class LiveDataFetcher:
         'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN': 'JUP',
     }
     
-    def __init__(self, api_key: str):
-        self.api_key = api_key
+    def __init__(self, api_key: str = None):
+        # Unify: Use passed key or fall back to config
+        self.api_key = api_key or config.ARKHAM_API_KEY
         self.base_url = config.ARKHAM_BASE_URL
-        self.headers = {"API-Key": api_key}
+        self.headers = {"API-Key": self.api_key}
     
     def _enforce_rate_limit(self):
         """Enforce 1 req/sec for /transfers endpoint"""

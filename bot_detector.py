@@ -3,7 +3,6 @@ Bot Detection using Multi-Endpoint Analysis
 """
 
 import pandas as pd
-import numpy as np
 import requests
 import time
 import json
@@ -12,10 +11,17 @@ from typing import Dict, List, Tuple, Optional
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Import Config
+try:
+    from config import config
+except ImportError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent))
+    from config import config
 
 class MultiEndpointDataAggregator:
     """Fetches data from multiple Arkham API endpoints with rate limiting"""
-    
     def __init__(self, api_key: str, base_url: str, cache_dir: str):
         self.api_key = api_key
         self.base_url = base_url
@@ -28,7 +34,7 @@ class MultiEndpointDataAggregator:
             '/transfers', '/counterparties/address/', '/counterparties/entity/',
             '/token/top_flow/', '/token/volume/', '/transfers/histogram'
         }
-    
+
     def _is_heavy_endpoint(self, endpoint: str) -> bool:
         return any(heavy in endpoint for heavy in self.heavy_endpoints)
     
@@ -130,7 +136,7 @@ class MultiEndpointDataAggregator:
 
 class BotDetector:
     """Bot detection using multi-endpoint analysis"""
-    
+
     THRESHOLDS = {
         'high_frequency_txs_per_hour': 10,
         'precision_decimals': 4,
@@ -138,21 +144,26 @@ class BotDetector:
         'off_hours_ratio': 0.4,
         'concentration_threshold': 0.7
     }
-    
-    def __init__(self, api_key: str, user_flows: pd.DataFrame, 
-                 base_url: str = "https://api.arkm.com",
-                 cache_dir: str = "data/cache",
+
+    def __init__(self,
+                 user_flows: pd.DataFrame,
+                 api_key: str = None,
+                 base_url: str = None,
+                 cache_dir: str = None,
                  endpoints: List[str] = None,
-                 time_window: str = "7d",
-                 max_workers: int = 3):
-        self.api_key = api_key
+                 time_window: str = None,
+                 max_workers: int = None):
+
+        # Use provided args OR fall back to config defaults
         self.user_flows = user_flows
-        self.base_url = base_url
-        self.cache_dir = cache_dir
-        self.time_window = time_window
-        self.max_workers = max_workers
-        self.endpoints = endpoints or ['transfers', 'intelligence', 'counterparties']
-        self.aggregator = MultiEndpointDataAggregator(api_key, base_url, cache_dir)
+        self.api_key = api_key or config.ARKHAM_API_KEY
+        self.base_url = base_url or config.ARKHAM_BASE_URL
+        self.cache_dir = cache_dir or config.CACHE_DIR
+        self.endpoints = endpoints or config.API_ENDPOINTS
+        self.time_window = time_window or config.TIME_WINDOW
+        self.max_workers = max_workers or config.MAX_WORKERS
+
+        self.aggregator = MultiEndpointDataAggregator(self.api_key, self.base_url, self.cache_dir)
         self.wallet_data = {}
         self.classification_results = None
     

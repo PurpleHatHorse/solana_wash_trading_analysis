@@ -5,7 +5,7 @@ Analyzes token holder concentration and AMM liquidity
 
 import pandas as pd
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple, Optional
 from data_fetcher import LiveDataFetcher
 
 class HolderAnalyzer:
@@ -23,8 +23,8 @@ class HolderAnalyzer:
         if "arkhamEntity" in address_info:
             entity_name = address_info["arkhamEntity"].get("name")
             if entity_name:
-                return entity_name 
-        
+                return entity_name
+
         if "arkhamLabel" in address_info:
             label_name = address_info["arkhamLabel"].get("name")
             if label_name:
@@ -34,18 +34,18 @@ class HolderAnalyzer:
 
     def process_holder_data(self) -> pd.DataFrame:
         """Parses raw JSON data into a DataFrame"""
-        
+
         print(f"\n[1/3] Processing Top Holders...")
-        
+
         # Fetch data using the passed fetcher instance
         self.raw_data = self.fetcher.fetch_token_holders(self.token_address, self.chain)
-        
+
         if not self.raw_data:
             print("  ⚠ No holder data returned")
             return pd.DataFrame()
 
         holders_data = self.raw_data.get("addressTopHolders", {}).get(self.chain, [])
-        
+
         if not holders_data:
             print(f"  ⚠ No holder list found for chain: {self.chain}")
             return pd.DataFrame()
@@ -56,8 +56,8 @@ class HolderAnalyzer:
             current_address = address_info.get("address", "Unknown")
             balance = entry.get("balance", 0)
             usd_value = entry.get("usd", 0)
-            pct_of_cap = entry.get("pctOfCap", 0) 
-            
+            pct_of_cap = entry.get("pctOfCap", 0)
+
             processed_list.append({
                 "Address": current_address,
                 "Label": self._extract_label(address_info),
@@ -67,21 +67,28 @@ class HolderAnalyzer:
             })
 
         self.df_holders = pd.DataFrame(processed_list)
-        
+
         # Sort and Rank
         self.df_holders.sort_values(by="Holding %", ascending=False, inplace=True)
         self.df_holders.reset_index(drop=True, inplace=True)
         self.df_holders["Rank"] = self.df_holders.index + 1
-        
+
         print(f"  ✓ Extracted {len(self.df_holders):,} unique holders")
-        
+
         return self.df_holders
 
-    def calculate_concentration_metrics(self):
-        """Calculates Top 3, Top 10, Gini Coefficient"""
-        
+    def calculate_concentration_metrics(self) -> Dict[str, float]:
+        """Calculates Top 3, Top 10, Gini Coefficient and returns metrics"""
+
+        metrics = {
+            "top_3_ratio": 0.0,
+            "top_10_ratio": 0.0,
+            "whale_dominance": 0.0,
+            "gini_coefficient": 0.0
+        }
+
         if self.df_holders is None or self.df_holders.empty:
-            return
+            return metrics
 
         print(f"\n[2/3] Calculating Risk Metrics...")
 
@@ -107,12 +114,20 @@ class HolderAnalyzer:
         print(f"  • Top 10 Ratio:     {top_10_ratio:.4f}%")
         print(f"  • Whale Dominance:  {top_1_dominance:.4f}% (Top 1)")
         print(f"  • Gini Coefficient: {gini_coeff:.4f}")
-        
+
         if top_10_ratio > 80:
             print(f"  🚨 RISK: High Concentration (>80% in Top 10)")
         if gini_coeff > 0.9:
             print(f"  🚨 RISK: Extreme Wealth Inequality (Gini > 0.9)")
         print("-" * 50)
+
+        metrics = {
+            "top_3_ratio": top_3_ratio,
+            "top_10_ratio": top_10_ratio,
+            "whale_dominance": top_1_dominance,
+            "gini_coefficient": gini_coeff
+        }
+        return metrics
 
     def analyze_amm_liquidity(self):
         """Deep dive into AMM LPs"""
@@ -130,36 +145,36 @@ class HolderAnalyzer:
             return
 
         print(f"  -> Found {len(target_lps)} AMM addresses. Checking pairs...")
-        
+
         results = []
 
         for _, row in target_lps.iterrows():
             address = row['Address']
             label = row['Label']
-            
+
             # Fetch balance using the Fetcher class logic
             balance_data = self.fetcher.fetch_wallet_balance(address, self.chain)
-            
+
             if not balance_data or 'balances' not in balance_data:
                 continue
 
             tokens = balance_data.get('balances', {}).get(self.chain, [])
             tokens_sorted = sorted(tokens, key=lambda x: x.get('usd', 0), reverse=True)
-            
+
             pair_info = []
             for t in tokens_sorted[:2]:
                 symbol = t.get('symbol', 'UNK')
                 usd_val = t.get('usd', 0)
                 pair_info.append(f"{symbol} (${usd_val/1000:.1f}k)")
-            
+
             pair_str = " / ".join(pair_info)
-            
+
             results.append({
                 "AMM": label,
                 "Pool Value": f"${row['USD Value']:,.0f}",
                 "Identified Pair": pair_str
             })
-            
+
             time.sleep(0.2) # Small delay for aesthetics/rate-limit safety
 
         if results:
@@ -168,12 +183,19 @@ class HolderAnalyzer:
             print(df_res.to_string(index=False))
             print("="*70)
 
-    def run_analysis(self):
-        """Main execution method"""
+    def run_analysis(self) -> Tuple[Dict[str, float], List[str]]:
+        """Main execution method - Returns Metrics and Top Holder Addresses"""
         print(f"\n{'='*70}")
         print("HOLDER & RISK ANALYSIS")
         print(f"{'='*70}")
-        
+
         self.process_holder_data()
-        self.calculate_concentration_metrics()
+        metrics = self.calculate_concentration_metrics()
         self.analyze_amm_liquidity()
+
+        # Return top 50 addresses for Whale Multiplier analysis
+        top_holders = []
+        if self.df_holders is not None and not self.df_holders.empty:
+            top_holders = self.df_holders.head(50)['Address'].tolist()
+
+        return metrics, top_holders
