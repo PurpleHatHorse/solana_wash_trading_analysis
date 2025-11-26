@@ -1,5 +1,5 @@
 """
-Combined Wash Trading + Bot Detection Analysis + Token Holders Analysis
+Full Risk Score: Wash Trading + Bot Detection Analysis + Token Holders Analysis
 Produces unified risk assessment
 """
 
@@ -16,8 +16,7 @@ from datetime import datetime
 import os
 
 
-class CombinedAnalyzer:
-    """Combines wash trading and bot detection results with risk scoring"""
+class RiskScoreAnalyzer:
 
     def __init__(self,
                  wash_trading_detector,
@@ -26,13 +25,12 @@ class CombinedAnalyzer:
         self.wash_detector = wash_trading_detector
         self.bot_detector = bot_detector
         self.token = token
-        self.combined_results = None
+        self.risk_results = None
         self.token_risk_data = None
 
     def calculate_token_risk_score(self, holder_metrics: Dict[str, float]) -> Dict[str, Any]:
         """
-        Method 1: Calculates a global risk score for the token asset itself.
-        Combines Concentration Risk, Bot Activity, and Wash Trading prevalence.
+        Calculates a global risk score for the token asset itself.
         """
         if not holder_metrics:
             return {"token_risk_score": 0, "risk_components": {}}
@@ -46,14 +44,14 @@ class CombinedAnalyzer:
             conc_score = max(conc_score, 90) # Floor at 90 if Gini is extreme
 
         # 2. Bot Component (0-100)
-        total_wallets = len(self.combined_results) if self.combined_results is not None else 0
-        bot_count = (self.combined_results['bot_classification'] == 'BOT').sum() if total_wallets > 0 else 0
+        total_wallets = len(self.risk_results) if self.risk_results is not None else 0
+        bot_count = (self.risk_results['bot_classification'] == 'BOT').sum() if total_wallets > 0 else 0
         bot_ratio = bot_count / total_wallets if total_wallets > 0 else 0
         # If > 30% of wallets are bots, max risk
         bot_score = min(bot_ratio * 333, 100)
 
         # 3. Wash Trading Component (0-100)
-        wash_count = self.combined_results['is_wash_trading'].sum() if total_wallets > 0 else 0
+        wash_count = self.risk_results['is_wash_trading'].sum() if total_wallets > 0 else 0
         wash_ratio = wash_count / total_wallets if total_wallets > 0 else 0
         # If > 20% of wallets are wash trading, max risk
         wash_score = min(wash_ratio * 500, 100)
@@ -72,11 +70,11 @@ class CombinedAnalyzer:
             }
         }
 
-    def create_combined_analysis(self, holder_metrics: Dict = None, top_holders: List[str] = None) -> pd.DataFrame:
+    def create_risk_analysis(self, holder_metrics: Dict = None, top_holders: List[str] = None) -> pd.DataFrame:
         """Create unified analysis with risk scores"""
 
         print(f"\n{'='*70}")
-        print("COMBINED ANALYSIS: WASH TRADING + BOT DETECTION + HOLDER ANALYSIS")
+        print("RISK SCORE ANALYSIS: WASH TRADING + BOT DETECTION + HOLDER ANALYSIS")
         print(f"{'='*70}\n")
 
         # Get suspicious wallets from wash trading
@@ -95,8 +93,8 @@ class CombinedAnalyzer:
         if top_holders:
             print(f"Top Holders Integrated: {len(top_holders)}")
 
-        # Build combined dataset
-        combined_data = []
+        # Build risk dataset
+        risk_data = []
 
         for wallet in all_wallets:
             # Get bot data
@@ -132,7 +130,7 @@ class CombinedAnalyzer:
                                     wash_flags.append(analysis_name)
                                     break
 
-            # Method 2: Check if wallet is a Top Holder (Whale)
+            # Check if wallet is a Top Holder (Whale)
             is_top_holder = wallet in top_holders_set
 
             # Calculate risk level
@@ -144,7 +142,7 @@ class CombinedAnalyzer:
                 is_top_holder
             )
 
-            combined_data.append({
+            risk_data.append({
                 'wallet': wallet,
                 'risk_level': risk_level,
                 'risk_score': risk_score,
@@ -155,14 +153,14 @@ class CombinedAnalyzer:
                 'wash_trading_flags': ','.join(wash_flags) if wash_flags else '',
                 'wash_flag_count': len(wash_flags),
                 'is_top_holder': is_top_holder,
-                'combined_threat': 'CRITICAL' if (bot_classification == 'BOT' and is_wash_trading) else
+                'risk_threat': 'CRITICAL' if (bot_classification == 'BOT' and is_wash_trading) else
                                   'HIGH' if (bot_classification == 'BOT' or is_wash_trading) else
                                   'MEDIUM' if bot_classification == 'UNCERTAIN' else 'LOW'
             })
 
-        self.combined_results = pd.DataFrame(combined_data).sort_values('risk_score', ascending=False)
+        self.risk_results = pd.DataFrame(risk_data).sort_values('risk_score', ascending=False)
 
-        # Calculate Global Token Risk (Method 1)
+        # Calculate Global Token Risk
         if holder_metrics:
             self.token_risk_data = self.calculate_token_risk_score(holder_metrics)
 
@@ -172,27 +170,27 @@ class CombinedAnalyzer:
         print(f"{'='*70}\n")
 
         for risk in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']:
-            count = (self.combined_results['risk_level'] == risk).sum()
-            pct = count / len(self.combined_results) * 100
+            count = (self.risk_results['risk_level'] == risk).sum()
+            pct = count / len(self.risk_results) * 100
             print(f"{risk:8s}: {count:4d} wallets ({pct:5.1f}%)")
 
         # Cross-analysis
-        bot_and_wash = self.combined_results[
-            (self.combined_results['bot_classification'] == 'BOT') &
-            (self.combined_results['is_wash_trading'] == True)
+        bot_and_wash = self.risk_results[
+            (self.risk_results['bot_classification'] == 'BOT') &
+            (self.risk_results['is_wash_trading'] == True)
         ]
 
         print(f"\n🚨 CRITICAL: {len(bot_and_wash)} wallets are BOTH bots AND wash traders")
 
         # Whale Alert
-        whale_threats = self.combined_results[
-            (self.combined_results['is_top_holder'] == True) &
-            (self.combined_results['risk_level'].isin(['CRITICAL', 'HIGH']))
+        whale_threats = self.risk_results[
+            (self.risk_results['is_top_holder'] == True) &
+            (self.risk_results['risk_level'].isin(['CRITICAL', 'HIGH']))
         ]
         if not whale_threats.empty:
              print(f"🚨 WHALE ALERT: {len(whale_threats)} Top Holders detected engaging in suspicious activity!")
 
-        return self.combined_results
+        return self.risk_results
 
     def _calculate_risk_level(self,
                              bot_score: float,
@@ -211,7 +209,7 @@ class CombinedAnalyzer:
         if is_wash_trading:
             risk_score += min(wash_flag_count * 15, 50)
 
-        # Method 2: Whale Multiplier
+        # Whale Multiplier
         # If a suspicious actor is also a top holder, max out the risk immediately
         if is_top_holder:
             if is_wash_trading or bot_classification == 'BOT':
@@ -239,13 +237,13 @@ class CombinedAnalyzer:
 
         report = []
         report.append("="*70)
-        report.append(f"COMBINED ANALYSIS REPORT: {self.token}")
+        report.append(f"RISK SCORE ANALYSIS REPORT: {self.token}")
         report.append("="*70)
         report.append(f"\nGenerated: {datetime.now()}")
         report.append(f"Token: {self.token}")
-        report.append(f"Total Wallets Analyzed: {len(self.combined_results)}")
+        report.append(f"Total Wallets Analyzed: {len(self.risk_results)}")
 
-        # Method 1: Token Global Risk Score
+        # Token Global Risk Score
         if self.token_risk_data:
             tr = self.token_risk_data
             components = tr['risk_components']
@@ -264,9 +262,9 @@ class CombinedAnalyzer:
         report.append("-"*70 + "\n")
 
         for risk in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']:
-            subset = self.combined_results[self.combined_results['risk_level'] == risk]
+            subset = self.risk_results[self.risk_results['risk_level'] == risk]
             count = len(subset)
-            pct = count / len(self.combined_results) * 100
+            pct = count / len(self.risk_results) * 100
             report.append(f"{risk:10s}: {count:4d} wallets ({pct:5.1f}%)")
 
         # Top threats
@@ -274,7 +272,7 @@ class CombinedAnalyzer:
         report.append("TOP 10 HIGHEST RISK WALLETS")
         report.append("-"*70 + "\n")
 
-        top_10 = self.combined_results.head(10)
+        top_10 = self.risk_results.head(10)
         for idx, row in top_10.iterrows():
             whale_tag = " [WHALE]" if row['is_top_holder'] else ""
             report.append(f"Wallet: {row['wallet']}{whale_tag}")
@@ -290,16 +288,16 @@ class CombinedAnalyzer:
         report.append("KEY FINDINGS")
         report.append("-"*70 + "\n")
 
-        critical = self.combined_results[self.combined_results['risk_level'] == 'CRITICAL']
-        bots = self.combined_results[self.combined_results['bot_classification'] == 'BOT']
-        wash = self.combined_results[self.combined_results['is_wash_trading'] == True]
-        both = self.combined_results[
-            (self.combined_results['bot_classification'] == 'BOT') &
-            (self.combined_results['is_wash_trading'] == True)
+        critical = self.risk_results[self.risk_results['risk_level'] == 'CRITICAL']
+        bots = self.risk_results[self.risk_results['bot_classification'] == 'BOT']
+        wash = self.risk_results[self.risk_results['is_wash_trading'] == True]
+        both = self.risk_results[
+            (self.risk_results['bot_classification'] == 'BOT') &
+            (self.risk_results['is_wash_trading'] == True)
         ]
-        whales = self.combined_results[
-            (self.combined_results['is_top_holder'] == True) &
-            (self.combined_results['risk_level'].isin(['CRITICAL', 'HIGH']))
+        whales = self.risk_results[
+            (self.risk_results['is_top_holder'] == True) &
+            (self.risk_results['risk_level'].isin(['CRITICAL', 'HIGH']))
         ]
 
         report.append(f"• Critical Risk Wallets: {len(critical)}")
@@ -316,18 +314,18 @@ class CombinedAnalyzer:
         return "\n".join(report)
 
     def save_results(self, output_dir: str, token: str):
-        """Save all combined results"""
+        """Save all risk results"""
 
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         os.makedirs(output_dir, exist_ok=True)
 
         # Save master CSV
-        master_file = f"{output_dir}/{token}_combined_analysis_{timestamp}.csv"
-        self.combined_results.to_csv(master_file, index=False)
+        master_file = f"{output_dir}/{token}_risk_analysis_{timestamp}.csv"
+        self.risk_results.to_csv(master_file, index=False)
         print(f"✓ Saved master analysis: {master_file}")
 
         # Save critical wallets
-        critical = self.combined_results[self.combined_results['risk_level'] == 'CRITICAL']
+        critical = self.risk_results[self.risk_results['risk_level'] == 'CRITICAL']
         if len(critical) > 0:
             critical_file = f"{output_dir}/{token}_critical_wallets_{timestamp}.txt"
             with open(critical_file, 'w') as f:

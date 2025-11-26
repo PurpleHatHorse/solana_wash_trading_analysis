@@ -14,7 +14,6 @@ A comprehensive Python-based system for detecting wash trading patterns in Solan
   - Volume concentration analysis
   - Timing pattern analysis
   - High-frequency address pairs
-- **Visualization**: Network graphs, timelines, and statistical charts
 - **Reporting**: Comprehensive text reports and CSV exports
 
 ## 📋 Prerequisites
@@ -27,8 +26,8 @@ A comprehensive Python-based system for detecting wash trading patterns in Solan
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/yourusername/solana-wash-trading-analysis.git
-cd solana-wash-trading-analysis
+git clone https://github.com/PurpleHatHorse/arkham-api-token-risk-score-analysis.git
+cd arkham-api-token-risk-score-analysis
 ```
 
 ### 2. Setup Environment
@@ -47,38 +46,29 @@ Create `.env` file:
 ```env
 ARKHAM_API_KEY=your_api_key_here
 TOKENS=EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm
-TOKEN_SYMBOL=WIF
 CHAIN=solana
-TIME_RANGE=30d
-MIN_USD_VALUE=100
-MAX_TRANSFERS=5000
+TIME_WINDOW=7d
 ```
 
 ### 4. Run Analysis
 ```bash
-# Step 1: Collect data
-python analyze_data.py
+# Execute the main run.py
+python run.py
 ```
 
 ## 📁 Project Structure
 ```
-solana-wash-trading-analysis/
-├── data/
-│   ├── raw/              # Raw JSON data from API
-│   └── processed/        # Processed CSV files
-├── scripts/
-│   ├── arkham_client.py  # API client
-│   ├── collect_data.py   # Data collection
-│   └── process_data.py   # Data processing
-├── analysis/
-│   ├── detect_wash_trading.py  # Detection algorithms
-│   └── visualize_results.py    # Visualization
-├── outputs/
-│   ├── reports/          # Analysis reports
-│   └── visualizations/   # Charts and graphs
+arkham-api-token-risk-score-analysis/
+├── README.md
 ├── requirements.txt
-├── .env
-└── README.md
+├── run.py
+└── srs
+    ├── bot_detector.py
+    ├── config.py
+    ├── data_fetcher.py
+    ├── full_risk_score_analysis.py
+    ├── holder_analyzer.py
+    └── wash_trading_detector.py
 ```
 
 ## 🔍 Detection Methods
@@ -111,20 +101,4 @@ Finds high-frequency trading between specific address pairs.
 - `circular_trades_TIMESTAMP.csv` - Circular patterns
 - `rapid_roundtrips_TIMESTAMP.csv` - Round-trip trades
 - `suspicious_addresses_TIMESTAMP.txt` - Flagged addresses
-
-### Visualizations
-- `transfer_timeline.png` - Activity over time
-- `volume_distribution.png` - Transfer size distribution
-- `hourly_activity.png` - Activity by hour
-- `top_addresses.png` - Highest volume addresses
-- `network_graph.png` - Transfer network visualization
-
-## 🔧 Configuration
-
-Edit `.env` to customize analysis parameters:
-
-- `TIME_RANGE`: Analysis period (7d, 30d, 90d)
-- `MIN_USD_VALUE`: Minimum transfer size to include
-- `MAX_TRANSFERS`: Maximum transfers to collect
-- `TARGET_TOKEN`: Token address to analyze
 

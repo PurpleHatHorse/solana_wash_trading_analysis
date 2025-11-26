@@ -7,8 +7,8 @@ import os
 from pathlib import Path
 
 # Setup paths
-# target_directory_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-# sys.path.insert(0, target_directory_path)
+target_directory_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "srs"))
+sys.path.insert(0, target_directory_path)
 
 # Import Config (this will auto-load .env)
 try:
@@ -30,7 +30,7 @@ from datetime import datetime
 from data_fetcher import LiveDataFetcher
 from wash_trading_detector import WashTradingDetector
 from bot_detector import BotDetector
-from combined_analyzer import CombinedAnalyzer
+from full_risk_score_analysis import RiskScoreAnalyzer
 from holder_analyzer import HolderAnalyzer
 
 def analyze_token(token_address: str):
@@ -73,18 +73,18 @@ def analyze_token(token_address: str):
     holder_analyzer = HolderAnalyzer(fetcher, token_address, config.CHAIN)
     holder_concentration_metrics, top_holders_list = holder_analyzer.run_analysis()
 
-    # Step 5: Combined
-    print("\n[5/5] COMBINED ANALYSIS")
-    combined = CombinedAnalyzer(wash_detector, bot_detector, token_name)
-    combined.create_combined_analysis(holder_concentration_metrics, top_holders_list)
+    # Step 5: full risk score analysis
+    print("\n[5/5] RISK SCORE ANALYSIS")
+    risk_score = RiskScoreAnalyzer(wash_detector, bot_detector, token_name)
+    risk_score.create_risk_score_analysis(holder_concentration_metrics, top_holders_list)
 
     # Save
-    os.makedirs(f"{config.OUTPUT_DIR}/combined_analysis", exist_ok=True)
-    combined.save_results(f"{config.OUTPUT_DIR}/combined_analysis", token_name)
-    print("\n" + combined.generate_report())
+    os.makedirs(f"{config.OUTPUT_DIR}/risk_score_analysis", exist_ok=True)
+    risk_score.save_results(f"{config.OUTPUT_DIR}/risk_score_analysis", token_name)
+    print("\n" + risk_score.generate_report())
 
 
-    return combined
+    return risk_score
 
 
 def main():
