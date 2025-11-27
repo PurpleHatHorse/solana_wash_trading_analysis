@@ -11,9 +11,10 @@ from data_fetcher import LiveDataFetcher
 class HolderAnalyzer:
     """Analyzes token holder distribution and liquidity concentration"""
 
-    def __init__(self, fetcher: LiveDataFetcher, token_address: str, chain: str):
+    def __init__(self, fetcher: LiveDataFetcher, token_address: str, token_name: str, chain: str):
         self.fetcher = fetcher
         self.token_address = token_address
+        self.token_name = token_name
         self.chain = chain
         self.raw_data = None
         self.df_holders = None
@@ -169,12 +170,13 @@ class HolderAnalyzer:
 
             pair_str = " / ".join(pair_info)
 
-            results.append({
-                "AMM": label,
-                "Address": address,
-                "Identified Pair": pair_str,
-                "Pool USD": "${:,.2f}".format(row['USD Value'])
-            })
+            if self.token_name in pair_str:
+                results.append({
+                    "AMM": label,
+                    "Address": address,
+                    "Identified Pair": pair_str,
+                    "Pool USD": "${:,.2f}".format(row['USD Value'])
+                })
 
             time.sleep(0.2) # Small delay for aesthetics/rate-limit safety
 

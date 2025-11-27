@@ -70,7 +70,7 @@ def analyze_token(token_address: str):
 
     # Step 4: Holder & Risk Analysis
     print("\n[4/5] HOLDER RISK ANALYSIS")
-    holder_analyzer = HolderAnalyzer(fetcher, token_address, config.CHAIN)
+    holder_analyzer = HolderAnalyzer(fetcher, token_address, token_name, config.CHAIN)
     holder_concentration_metrics, top_holders_list = holder_analyzer.run_analysis()
 
     # Step 5: full risk score analysis

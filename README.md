@@ -93,12 +93,3 @@ Identifies unusual temporal patterns in trading activity.
 
 ### 7. Address Pair Analysis
 Finds high-frequency trading between specific address pairs.
-
-## 📊 Output Examples
-
-### Reports
-- `analysis_report_TIMESTAMP.txt` - Text summary
-- `circular_trades_TIMESTAMP.csv` - Circular patterns
-- `rapid_roundtrips_TIMESTAMP.csv` - Round-trip trades
-- `suspicious_addresses_TIMESTAMP.txt` - Flagged addresses
-
