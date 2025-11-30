@@ -134,7 +134,7 @@ class HolderAnalyzer:
         """Deep dive into AMM LPs"""
         if self.df_holders is None: return
 
-        print(f"\n[3/3] Analyzing AMM Liquidity (Top 100)...")
+        print(f"\n[3/3] Analyzing AMM Liquidity from Top 100 holders list...")
 
         top_100 = self.df_holders.head(100)
         target_amms = ['Orca', 'Raydium', 'Meteora']
@@ -145,9 +145,8 @@ class HolderAnalyzer:
             print("  ✓ No major AMM addresses found in Top 100.")
             return
 
-        print(f"  -> Found {len(target_lps)} AMM addresses. Checking pairs...")
-
         results = []
+        filtered_target_lps = []
 
         for _, row in target_lps.iterrows():
             address = row['Address']
@@ -171,6 +170,7 @@ class HolderAnalyzer:
             pair_str = " / ".join(pair_info)
 
             if self.token_name in pair_str:
+                filtered_target_lps.append(pair_str)
                 results.append({
                     "AMM": label,
                     "Address": address,
@@ -179,6 +179,8 @@ class HolderAnalyzer:
                 })
 
             time.sleep(0.2) # Small delay for aesthetics/rate-limit safety
+            
+        print(f"  -> Found {len(filtered_target_lps)} AMM addresses. Checking pairs...")
 
         if results:
             print("\n" + "-"*70)

@@ -44,7 +44,12 @@ class LiveDataFetcher:
             response = requests.get(url, headers=self.headers, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
-            token_name = data['arkhamEntity']['name']
+            print (data)
+            name = data['arkhamLabel']['name']
+            start = name.index("(") + 1
+            end = name.index(")")
+            # Extract the substring
+            token_name = name[start:end]
             print(f"✓ Successfully fetched token name")
             return token_name.upper()
         except requests.exceptions.RequestException as e:
