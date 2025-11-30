@@ -44,7 +44,6 @@ class LiveDataFetcher:
             response = requests.get(url, headers=self.headers, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
-            print (data)
             name = data['arkhamLabel']['name']
             start = name.index("(") + 1
             end = name.index(")")
